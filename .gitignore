@@ -1,0 +1,41 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.venv/
+venv/
+.python-version
+
+# --- uv ---
+# uv.lock IS committed for reproducible installs; do not ignore it.
+
+# --- Testing / tooling caches ---
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+.coverage.*
+
+# --- Playwright ---
+# Local browser binary cache (installed via `playwright install`), not the repo config.
+node_modules/
+/ms-playwright/
+
+# --- Secrets / environment ---
+.env
+.env.*
+!.env.example
+
+# --- Framework generated output (logs, reports, screenshots, videos) ---
+output/
+!output/.gitkeep
+
+# --- Editors / OS ---
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+*.swp

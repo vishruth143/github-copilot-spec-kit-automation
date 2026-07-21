@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Lint & Test (${{ matrix.browser }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    env:
+      ENV: dev
+      INTERNET_HEROKUAPP_URL__DEV: ${{ secrets.INTERNET_HEROKUAPP_URL__DEV }}
+      INTERNET_HEROKUAPP_USERNAME: ${{ secrets.INTERNET_HEROKUAPP_USERNAME }}
+      INTERNET_HEROKUAPP_PASSWORD: ${{ secrets.INTERNET_HEROKUAPP_PASSWORD }}
+      DEMO_PLAYWRIGHT_BASE_URL__DEV: ${{ secrets.DEMO_PLAYWRIGHT_BASE_URL__DEV }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Install Playwright browsers
+        run: uv run playwright install --with-deps ${{ matrix.browser }}
+
+      - name: Lint (Ruff)
+        run: uv run ruff check .
+
+      - name: Format check (Ruff)
+        run: uv run ruff format --check .
+
+      - name: Run tests in parallel
+        run: uv run pytest -n auto --browser=${{ matrix.browser }}
+
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-output-${{ matrix.browser }}
+          path: output/
+          if-no-files-found: ignore
+          retention-days: 14
