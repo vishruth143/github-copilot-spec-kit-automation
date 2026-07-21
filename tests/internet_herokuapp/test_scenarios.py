@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 from apps.internet_herokuapp.pages.login_page import LoginPage
-from apps.internet_herokuapp.test_data.login_data import INVALID_PASSWORD
+from apps.internet_herokuapp.test_data.login_data import INVALID_PASSWORD, INVALID_USERNAME
 
 
 @pytest.mark.smoke
@@ -50,6 +50,23 @@ def test_login_fails_with_invalid_password(
     login_page.open()
 
     login_page.login(internet_herokuapp_credentials["username"], INVALID_PASSWORD)
+
+    assert not login_page.is_login_successful()
+    assert "invalid" in (login_page.flash_message() or "").lower()
+
+
+@pytest.mark.smoke
+@pytest.mark.critical
+def test_login_fails_with_invalid_username(page, internet_herokuapp_base_url):
+    # Test steps:
+    # 1. Open the sample application's login page.
+    # 2. Enter a deliberately invalid username with any password.
+    # 3. Submit the login form.
+    # 4. Verify the login is rejected with an appropriate error message.
+    login_page = LoginPage(page, base_url=internet_herokuapp_base_url)
+    login_page.open()
+
+    login_page.login(INVALID_USERNAME, INVALID_PASSWORD)
 
     assert not login_page.is_login_successful()
     assert "invalid" in (login_page.flash_message() or "").lower()

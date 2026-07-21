@@ -5,6 +5,13 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: false
+        default: DEV
+        type: choice
+        options: [DEV, TEST, STAGE, PROD]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -19,14 +26,30 @@ jobs:
       matrix:
         browser: [chromium, firefox, webkit]
     env:
-      ENV: dev
-      INTERNET_HEROKUAPP_URL__DEV: ${{ secrets.INTERNET_HEROKUAPP_URL__DEV }}
+      # ENV drives which per-environment secret suffix (DEV/TEST/STAGE/PROD)
+      # is resolved below; defaults to DEV for push/pull_request triggers,
+      # where workflow_dispatch inputs are unavailable.
+      ENV: ${{ github.event.inputs.environment || 'DEV' }}
       INTERNET_HEROKUAPP_USERNAME: ${{ secrets.INTERNET_HEROKUAPP_USERNAME }}
       INTERNET_HEROKUAPP_PASSWORD: ${{ secrets.INTERNET_HEROKUAPP_PASSWORD }}
-      DEMO_PLAYWRIGHT_BASE_URL__DEV: ${{ secrets.DEMO_PLAYWRIGHT_BASE_URL__DEV }}
+      # Dynamic secret lookups: the suffix (__DEV, __TEST, ...) is chosen at
+      # expression-evaluation time from the selected environment, instead of
+      # being hardcoded to __DEV.
+      RESOLVED_INTERNET_HEROKUAPP_URL: ${{ secrets[format('INTERNET_HEROKUAPP_URL__{0}', github.event.inputs.environment || 'DEV')] }}
+      RESOLVED_DEMO_PLAYWRIGHT_BASE_URL: ${{ secrets[format('DEMO_PLAYWRIGHT_BASE_URL__{0}', github.event.inputs.environment || 'DEV')] }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Export environment-specific base URL variables
+        # GitHub Actions env: keys must be static, so the __<ENV> suffixed
+        # variable names the app code expects (e.g. INTERNET_HEROKUAPP_URL__STAGE)
+        # are constructed dynamically here from $ENV, rather than a fixed
+        # __DEV key in the env: block above.
+        shell: bash
+        run: |
+          echo "INTERNET_HEROKUAPP_URL__${ENV}=${RESOLVED_INTERNET_HEROKUAPP_URL}" >> "$GITHUB_ENV"
+          echo "DEMO_PLAYWRIGHT_BASE_URL__${ENV}=${RESOLVED_DEMO_PLAYWRIGHT_BASE_URL}" >> "$GITHUB_ENV"
 
       - name: Set up Python 3.13
         uses: actions/setup-python@v5
