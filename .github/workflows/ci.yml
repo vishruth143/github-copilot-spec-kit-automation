@@ -2,16 +2,23 @@ name: CI
 
 on:
   pull_request:
+
   push:
-    branches: [main]
+    branches:
+      - main
+
   workflow_dispatch:
     inputs:
       environment:
         description: "Target environment"
-        required: false
-        default: DEV
+        required: true
+        default: TEST
         type: choice
-        options: [DEV, TEST, STAGE, PROD]
+        options:
+          - DEV
+          - TEST
+          - STAGE
+          - PROD
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -19,37 +26,39 @@ concurrency:
 
 jobs:
   test:
-    name: Lint & Test (${{ matrix.browser }})
+    name: UI Tests (${{ matrix.browser }})
     runs-on: ubuntu-latest
+
     strategy:
       fail-fast: false
       matrix:
-        browser: [chromium, firefox, webkit]
+        browser:
+          - chromium
+          - firefox
+          - webkit
+
     env:
-      # ENV drives which per-environment secret suffix (DEV/TEST/STAGE/PROD)
-      # is resolved below; defaults to DEV for push/pull_request triggers,
-      # where workflow_dispatch inputs are unavailable.
-      ENV: ${{ github.event.inputs.environment || 'DEV' }}
+      ENV: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || 'TEST' }}
+
+      BROWSER: ${{ matrix.browser }}
+      HEADLESS: "true"
+
+      INTERNET_HEROKUAPP_URL__DEV: ${{ secrets.INTERNET_HEROKUAPP_URL__DEV }}
+      INTERNET_HEROKUAPP_URL__TEST: ${{ secrets.INTERNET_HEROKUAPP_URL__TEST }}
+      INTERNET_HEROKUAPP_URL__STAGE: ${{ secrets.INTERNET_HEROKUAPP_URL__STAGE }}
+      INTERNET_HEROKUAPP_URL__PROD: ${{ secrets.INTERNET_HEROKUAPP_URL__PROD }}
+
+      DEMO_PLAYWRIGHT_BASE_URL__DEV: ${{ secrets.DEMO_PLAYWRIGHT_BASE_URL__DEV }}
+      DEMO_PLAYWRIGHT_BASE_URL__TEST: ${{ secrets.DEMO_PLAYWRIGHT_BASE_URL__TEST }}
+      DEMO_PLAYWRIGHT_BASE_URL__STAGE: ${{ secrets.DEMO_PLAYWRIGHT_BASE_URL__STAGE }}
+      DEMO_PLAYWRIGHT_BASE_URL__PROD: ${{ secrets.DEMO_PLAYWRIGHT_BASE_URL__PROD }}
+
       INTERNET_HEROKUAPP_USERNAME: ${{ secrets.INTERNET_HEROKUAPP_USERNAME }}
       INTERNET_HEROKUAPP_PASSWORD: ${{ secrets.INTERNET_HEROKUAPP_PASSWORD }}
-      # Dynamic secret lookups: the suffix (__DEV, __TEST, ...) is chosen at
-      # expression-evaluation time from the selected environment, instead of
-      # being hardcoded to __DEV.
-      RESOLVED_INTERNET_HEROKUAPP_URL: ${{ secrets[format('INTERNET_HEROKUAPP_URL__{0}', github.event.inputs.environment || 'DEV')] }}
-      RESOLVED_DEMO_PLAYWRIGHT_BASE_URL: ${{ secrets[format('DEMO_PLAYWRIGHT_BASE_URL__{0}', github.event.inputs.environment || 'DEV')] }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Export environment-specific base URL variables
-        # GitHub Actions env: keys must be static, so the __<ENV> suffixed
-        # variable names the app code expects (e.g. INTERNET_HEROKUAPP_URL__STAGE)
-        # are constructed dynamically here from $ENV, rather than a fixed
-        # __DEV key in the env: block above.
-        shell: bash
-        run: |
-          echo "INTERNET_HEROKUAPP_URL__${ENV}=${RESOLVED_INTERNET_HEROKUAPP_URL}" >> "$GITHUB_ENV"
-          echo "DEMO_PLAYWRIGHT_BASE_URL__${ENV}=${RESOLVED_DEMO_PLAYWRIGHT_BASE_URL}" >> "$GITHUB_ENV"
 
       - name: Set up Python 3.13
         uses: actions/setup-python@v5
@@ -62,23 +71,50 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
-      - name: Install Playwright browsers
+      - name: Install Playwright Browsers
         run: uv run playwright install --with-deps ${{ matrix.browser }}
 
-      - name: Lint (Ruff)
+      - name: Verify configuration
+        shell: bash
+        run: |
+          echo "======================================"
+          echo "Environment : $ENV"
+          echo "Browser     : $BROWSER"
+          echo "Headless    : $HEADLESS"
+          echo "======================================"
+
+          test -n "$INTERNET_HEROKUAPP_URL__DEV"
+          test -n "$INTERNET_HEROKUAPP_URL__TEST"
+          test -n "$INTERNET_HEROKUAPP_URL__STAGE"
+          test -n "$INTERNET_HEROKUAPP_URL__PROD"
+
+          test -n "$DEMO_PLAYWRIGHT_BASE_URL__DEV"
+          test -n "$DEMO_PLAYWRIGHT_BASE_URL__TEST"
+          test -n "$DEMO_PLAYWRIGHT_BASE_URL__STAGE"
+          test -n "$DEMO_PLAYWRIGHT_BASE_URL__PROD"
+
+          test -n "$INTERNET_HEROKUAPP_USERNAME"
+          test -n "$INTERNET_HEROKUAPP_PASSWORD"
+
+          echo "✅ Configuration validated."
+
+      - name: Run Ruff Lint
         run: uv run ruff check .
 
-      - name: Format check (Ruff)
+      - name: Run Ruff Format Check
         run: uv run ruff format --check .
 
-      - name: Run tests in parallel
-        run: uv run pytest -n auto --browser=${{ matrix.browser }}
+      - name: Execute Playwright Tests
+        run: |
+          uv run pytest \
+            -n auto \
+            --browser=${{ matrix.browser }}
 
-      - name: Upload test artifacts
+      - name: Upload Test Artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-output-${{ matrix.browser }}
+          name: output-${{ env.ENV }}-${{ matrix.browser }}
           path: output/
           if-no-files-found: ignore
           retention-days: 14
